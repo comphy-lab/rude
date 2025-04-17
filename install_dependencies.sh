@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Parse Python dependencies from requirements.txt
-PYTHON_DEPS=$(awk '/^# Julia dependencies/{exit} /^[^#[:space:]]/ {print $1}' requirements.txt | xargs)
+# Parse Python dependencies from requirements-old.txt
+PYTHON_DEPS=$(awk '/^# Julia dependencies/{exit} /^[^#[:space:]]/ {print $1}' requirements-old.txt | xargs)
 
 # Check for conda (simple version)
 if conda --version &> /dev/null; then
@@ -45,8 +45,8 @@ if command -v juliaup &> /dev/null; then
         echo "Successfully installed Julia $JULIA_VERSION."
         
         echo "Installing Julia dependencies with Julia $JULIA_VERSION..."
-        # Parse Julia packages and versions from requirements.txt
-        awk '/^# Julia dependencies/{flag=1; next} /^#|^$/{next} flag && NF {print $1}' requirements.txt | \
+        # Parse Julia packages and versions from requirements-old.txt
+        awk '/^# Julia dependencies/{flag=1; next} /^#|^$/{next} flag && NF {print $1}' requirements-old.txt | \
         awk -F'==' '{printf "Pkg.add(Pkg.PackageSpec(name=\"%s\", version=\"%s\"))\n", $1, $2}' > "$JULIA_ENV_DIR/install_julia_deps.jl.tmp"
     
         # Create the main Julia installation script
@@ -82,8 +82,8 @@ EOL
         JULIA_CURRENT_VERSION=$($JULIA_DEFAULT_CMD --version | awk '{print $3}')
         echo "Using Julia $JULIA_CURRENT_VERSION (not the recommended $JULIA_VERSION)"
         
-        # Parse Julia packages and versions from requirements.txt
-        awk '/^# Julia dependencies/{flag=1; next} /^#|^$/{next} flag && NF {print $1}' requirements.txt | \
+        # Parse Julia packages and versions from requirements-old.txt
+        awk '/^# Julia dependencies/{flag=1; next} /^#|^$/{next} flag && NF {print $1}' requirements-old.txt | \
         awk -F'==' '{printf "Pkg.add(Pkg.PackageSpec(name=\"%s\", version=\"%s\"))\n", $1, $2}' > "$JULIA_ENV_DIR/install_julia_deps.jl.tmp"
         
         # Create the main Julia installation script
@@ -109,8 +109,8 @@ elif command -v julia &> /dev/null; then
     echo ""
     echo "Attempting to continue with Julia $JULIA_CURRENT_VERSION, but compatibility issues may occur..."
     
-    # Parse Julia packages and versions from requirements.txt
-    awk '/^# Julia dependencies/{flag=1; next} /^#|^$/{next} flag && NF {print $1}' requirements.txt | \
+    # Parse Julia packages and versions from requirements-old.txt
+    awk '/^# Julia dependencies/{flag=1; next} /^#|^$/{next} flag && NF {print $1}' requirements-old.txt | \
     awk -F'==' '{printf "Pkg.add(Pkg.PackageSpec(name=\"%s\", version=\"%s\"))\n", $1, $2}' > "$JULIA_ENV_DIR/install_julia_deps.jl.tmp"
     
     # Create the main Julia installation script

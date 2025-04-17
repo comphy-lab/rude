@@ -32,6 +32,12 @@ When attempting to install these specific package versions using the original in
 
 3. Multiple downgrade/upgrade cycles in the package resolution process indicates complex compatibility constraints between packages
 
+> Note to reproduce
+Run
+```bash
+bash install_dependencies-old.sh
+```
+
 ## Update Plan
 
 Instead of trying to maintain the original package versions, I will update the repository to work with the latest Julia and package versions. This approach should provide:
