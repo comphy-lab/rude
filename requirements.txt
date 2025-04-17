@@ -5,16 +5,16 @@ scipy
 pandas
 
 # Julia dependencies
-Flux==0.13.9
-Optimization==3.10.0
-Optimisers==0.2.14
-OptimizationOptimisers==0.1.1
-SciMLSensitivity==7.11.1
-DifferentialEquations==7.6.0
-Zygote==0.6.51
-Enzyme==0.10.12
-PyPlot==2.11.0
-OrdinaryDiffEq==6.35.1
-DataInterpolations==3.10.1
-BSON==0.3.6
-FFTW==1.5.0
+Flux
+Optimization
+Optimisers
+OptimizationOptimisers
+SciMLSensitivity
+DifferentialEquations
+Zygote
+Enzyme
+PyPlot
+OrdinaryDiffEq
+DataInterpolations
+BSON
+FFTW

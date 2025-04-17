@@ -135,3 +135,4 @@ dmypy.json
 **/.DS_Store
 
 .julia-rude/
+.project_config
