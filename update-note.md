@@ -49,20 +49,21 @@ Instead of trying to maintain the original package versions, I will update the r
 
 ### Tasks
 
-- [ ] Upgrade to latest stable Julia version (currently 1.10.x)
-- [ ] Create a fresh environment with latest package versions
-- [ ] Update code to accommodate any API changes
+- [X] Upgrade to latest stable Julia version (currently 1.10.x)
+- [X] Create a fresh environment with latest package versions
 - [ ] Test all functionality against example cases
 - [ ] Compare results with the original implementation
 - [ ] Document any behavior differences
 
-### Potential Challenges
+### Erorrs due to invompatibility:
 
-The update may encounter challenges with:
-- Different neural network behavior with newer Flux versions
-- Changes to the differential equation solver interfaces
-- Possible differences in optimization convergence
-- Visualization differences with updated PyPlot
+This error are most likely due to the incompatibility of the codebase with the latest Julia (and other package) version._
+
+```
+MethodError: Cannot `convert` an object of type VectorOfArray{Float32, 2, Vector{Vector{Float32}}} to an object of type ODESolution{...}
+```
+> The error occurs in the `loss_univ` function at line 185 of (older version of) rude.jl and propagates through the Zygote automatic differentiation system. It's essentially a compatibility issue where a solution from a differential equation solver needs to be converted to another type for gradient calculation, but the conversion method doesn't exist.
+
 
 ## Progress Updates
 
