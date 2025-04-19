@@ -51,11 +51,14 @@ Instead of trying to maintain the original package versions, I will update the r
 
 - [X] Upgrade to latest stable Julia version (currently 1.10.x)
 - [X] Create a fresh environment with latest package versions
-- [ ] Test all functionality against example cases
+- [X] Test all functionality against example cases -- tested by running the julia scripts at maxiters = 2
 - [ ] Compare results with the original implementation
 - [ ] Document any behavior differences
 
-### Erorrs due to invompatibility:
+> Note: giesekus/rude.jl worked fine as is, no changes were needed.
+
+
+### Error due to incompatibility:
 
 This error are most likely due to the incompatibility of the codebase with the latest Julia (and other package) version._
 
@@ -69,4 +72,4 @@ MethodError: Cannot `convert` an object of type VectorOfArray{Float32, 2, Vector
 
 This section will be updated as the migration progresses.
 
-*Last updated: April 17, 2025*
+*Last updated: April 19, 2025*
