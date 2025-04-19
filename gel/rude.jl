@@ -1,5 +1,6 @@
 using Flux, Optimization, OptimizationOptimisers, SciMLSensitivity, DifferentialEquations
 using Zygote, PyPlot, LinearAlgebra, OrdinaryDiffEq, DelimitedFiles
+using ForwardDiff
 using DataInterpolations
 using BSON: @save, @load
 using FFTW
@@ -89,7 +90,8 @@ function tbnn(σ,γd,model_weights_1,model_weights_2)
     λ9 = (T6_11 + T6_22 + T6_33)/2
 
     # Run the integrity basis through a neural network
-    model_inputs = [λ1;λ2;λ3;λ4;λ5;λ6;λ7;λ8;λ9]
+    raw_inputs = [λ1;λ2;λ3;λ4;λ5;λ6;λ7;λ8;λ9]
+    model_inputs = eltype(raw_inputs) <: AbstractFloat ? Float32.(raw_inputs) : raw_inputs
     g1,g2,g3 = re_1(model_weights_1)(model_inputs)
     g4,g5,g6,g7,g8,g9 = re_2(model_weights_2)(model_inputs)
 
@@ -360,163 +362,166 @@ if length(losses) > 0
     PyPlot.savefig("training_curve.pdf")
 end
 
-# # Test the UDE on a new condition
-# target = ["σ12","σ12","σ12","σ12"]
+# Test the UDE on a new condition
+target = ["σ12","σ12","σ12","σ12"]
 
-# Gp_data = Any[]
-# Gpp_data = Any[]
-# γ0_data = Any[]
-# N1_zero_data = Any[]
-# N1_range_data = Any[]
-# N1_phase_data = Any[]
-# for k = range(1,length(protocols),step=1)
-# 	# Get data
-# 	t_data = τm*t_all[k]
-# 	local σ12_data = Gm*σ12_all[k]
-# 	γ12_data = γ12_all[k]
-# 	N1_data = Gm*N1_all[k]
+Gp_data = Any[]
+Gpp_data = Any[]
+γ0_data = Any[]
+N1_zero_data = Any[]
+N1_range_data = Any[]
+N1_phase_data = Any[]
+for k = range(1,length(protocols),step=1)
+	# Get data
+	t_data = τm*t_all[k]
+	local σ12_data = Gm*σ12_all[k]
+	γ12_data = γ12_all[k]
+	N1_data = Gm*N1_all[k]
 	
-# 	# Compute the Fourier transform
-# 	σ12_data_fft = rfft(σ12_data)
-# 	γ12_data_fft = rfft(γ12_data)
-# 	N1_data_fft = rfft(N1_data)
-# 	ω_fft = 2*π*rfftfreq(length(σ12_data), (length(t_data)-1)/(t_data[end]-t_data[1]))
+	# Compute the Fourier transform
+	σ12_data_fft = rfft(σ12_data)
+	γ12_data_fft = rfft(γ12_data)
+	N1_data_fft = rfft(N1_data)
+	ω_fft = 2*π*rfftfreq(length(σ12_data), (length(t_data)-1)/(t_data[end]-t_data[1]))
 	
-# 	# Get values at the first harmonic
-# 	I_min = argmin(abs.(ω_fft .- 1))
-# 	I_min_2 = argmin(abs.(ω_fft .- 2))
-# 	G1 = σ12_data_fft[I_min]/γ12_data_fft[I_min]
-# 	N1_2 = N1_data_fft[I_min_2]/γ12_data_fft[I_min]
+	# Get values at the first harmonic
+	I_min = argmin(abs.(ω_fft .- 1))
+	I_min_2 = argmin(abs.(ω_fft .- 2))
+	G1 = σ12_data_fft[I_min]/γ12_data_fft[I_min]
+	N1_2 = N1_data_fft[I_min_2]/γ12_data_fft[I_min]
 	
-# 	# Store in arrays
-# 	push!(Gp_data, real(G1))
-# 	push!(Gpp_data, imag(G1))
-# 	push!(γ0_data, abs(γ12_data_fft[I_min])/length(γ12_data_fft))
-# 	push!(N1_zero_data, sum(N1_data)/length(N1_data))
-# 	push!(N1_range_data, maximum(N1_data[end-600:end]) - minimum(N1_data[end-600:end]))
-# 	push!(N1_phase_data, angle(N1_2))
+	# Store in arrays
+	push!(Gp_data, real(G1))
+	push!(Gpp_data, imag(G1))
+	push!(γ0_data, abs(γ12_data_fft[I_min])/length(γ12_data_fft))
+	push!(N1_zero_data, sum(N1_data)/length(N1_data))
+	push!(N1_range_data, maximum(N1_data[end-600:end]) - minimum(N1_data[end-600:end]))
+	push!(N1_phase_data, angle(N1_2))
 
-# 	# Solve the UDE pre-training
-# 	res = solve_ude_mm(protocols[k], tspan, θ0, p_system, n_modes, saveat)
-# 	t_pre = τm*res[1]
-# 	sol_pre = Gm*res[2]
-# 	σ12_ude_pre = sol_pre[4,:]
-# 	N1_ude_pre = sol_pre[1,:] - sol_pre[2,:]
-# 	N2_ude_pre = sol_pre[2,:] - sol_pre[3,:]
+	# Solve the UDE pre-training
+	res = solve_ude_mm(protocols[k], tspan, θ0, p_system, n_modes, saveat)
+	t_pre = τm*res[1]
+	sol_pre = Gm*res[2]
+	σ12_ude_pre = sol_pre[4,:]
+	N1_ude_pre = sol_pre[1,:] - sol_pre[2,:]
+	N2_ude_pre = sol_pre[2,:] - sol_pre[3,:]
 	
-# 	# Solve the UDE post-training
-# 	res = solve_ude_mm(protocols[k], tspan, θi, p_system, n_modes, saveat)
-# 	t_post = τm*res[1]
-# 	sol_univ = Gm*res[2]
-# 	σ12_ude_post = sol_univ[4,:]
-# 	N1_ude_post = sol_univ[1,:] - sol_univ[2,:]
-# 	N2_ude_post = sol_univ[2,:] - sol_univ[3,:]
+	# Solve the UDE post-training
+	res = solve_ude_mm(protocols[k], tspan, θi, p_system, n_modes, saveat)
+	t_post = τm*res[1]
+	sol_univ = Gm*res[2]
+	σ12_ude_post = sol_univ[4,:]
+	N1_ude_post = sol_univ[1,:] - sol_univ[2,:]
+	N2_ude_post = sol_univ[2,:] - sol_univ[3,:]
 
-# 	# Plot
-# 	if target[k] == "σ12"
-# 		fig, ax = subplots()
-# 		ax.plot(γ12_data,σ12_ude_pre[2:end],"b--",lw=2)
-# 		ax.plot(γ12_data,σ12_ude_post[2:end],"r-",lw=2)
-# 		ax.plot(γ12_data[1:20:end],σ12_data[1:20:end],"ko")
-# 	elseif target[k] == "N1"
-# 		fig, ax = subplots()
-# 		ax.plot(γ12_data,N1_ude_pre[2:end],"b--",lw=2)
-# 		ax.plot(γ12_data,N1_ude_post[2:end],"r-",lw=2)
-# 		N1_data_new = copy(N1_data)
+	# Plot
+	if target[k] == "σ12"
+		local fig, ax = subplots()
+		ax.plot(γ12_data,σ12_ude_pre[2:end],"b--",lw=2)
+		ax.plot(γ12_data,σ12_ude_post[2:end],"r-",lw=2)
+		ax.plot(γ12_data[1:20:end],σ12_data[1:20:end],"ko")
+	elseif target[k] == "N1"
+		local fig, ax = subplots()
+		ax.plot(γ12_data,N1_ude_pre[2:end],"b--",lw=2)
+		ax.plot(γ12_data,N1_ude_post[2:end],"r-",lw=2)
+		N1_data_new = copy(N1_data)
 
-# 		# Smooth the normal stress data over a sliding window
-# 		for i in range(11,length(N1_data)-10,step=1)
-# 			N1_data_new[i] = N1_data[i]/21
-# 			for j in range(1,10,step=1)
-# 				N1_data_new[i] += N1_data[i-j]/21 + N1_data[i+j]/21
-# 			end
-# 		end
-# 		ax.plot(γ12_data[1:5:end],N1_data_new[1:5:end],"ko")
-# 	elseif target[k] == "N2"
-# 		fig, ax = subplots()
-# 		ax.plot(t_pre,N2_ude_pre,"b--",lw=2)
-# 		ax.plot(t_post,N2_ude_post,"r-",lw=2)
-# 	elseif target[k] == "ηE"
-# 		fig, ax = subplots()
-# 		ax.plot(t_pre,-N2_ude_pre-N1_ude_pre,"b--",lw=2)
-# 		ax.plot(t_post,-N2_ude_post-N1_ude_post,"r-",lw=2)
-# 	end
-# 	ax[:tick_params](axis="both", direction="in", which="both", right="true", top="true", labelsize=12)
-# 	savefig("test"*string(k)*".pdf")
-# end
+		# Smooth the normal stress data over a sliding window
+		for i in range(11,length(N1_data)-10,step=1)
+			N1_data_new[i] = N1_data[i]/21
+			for j in range(1,10,step=1)
+				N1_data_new[i] += N1_data[i-j]/21 + N1_data[i+j]/21
+			end
+		end
+		ax.plot(γ12_data[1:5:end],N1_data_new[1:5:end],"ko")
+	elseif target[k] == "N2"
+		local fig, ax = subplots()
+		ax.plot(t_pre,N2_ude_pre,"b--",lw=2)
+		ax.plot(t_post,N2_ude_post,"r-",lw=2)
+	elseif target[k] == "ηE"
+		local fig, ax = subplots()
+		ax.plot(t_pre,-N2_ude_pre-N1_ude_pre,"b--",lw=2)
+		ax.plot(t_post,-N2_ude_post-N1_ude_post,"r-",lw=2)
+	end
+	ax[:tick_params](axis="both", direction="in", which="both", right="true", top="true", labelsize=12)
+	savefig("test"*string(k)*".pdf")
+end
 
-# Gp_pre = Number[]
-# Gpp_pre = Number[]
-# N1_pre = Number[]
-# N1_phase_pre = Number[]
-# N1_range_pre = Number[]
-# Gp_post = Number[]
-# Gpp_post = Number[]
-# N1_post = Number[]
-# N1_phase_post = Number[]
-# N1_range_post = Number[]
-# γ0 = Number[]
-# ω = 1
-# for γ0i = 10 .^ (range(-2,log10(3),length=50))
-# 	push!(γ0, γ0i)
-# 	γdot_fun(t) = γ0i*τm*ω*cos(τm*ω*t)
-# 	gradv = [v11,v12,v13,γdot_fun,v22,v23,v31,v32,v33]
-# 	res_pre = solve_ude_mm(gradv, tspan, θ0, p_system, n_modes, saveat)
-# 	res_post = solve_ude_mm(gradv, tspan, θi, p_system, n_modes, saveat)
+Gp_pre = Number[]
+Gpp_pre = Number[]
+N1_pre = Number[]
+N1_phase_pre = Number[]
+N1_range_pre = Number[]
+Gp_post = Number[]
+Gpp_post = Number[]
+N1_post = Number[]
+N1_phase_post = Number[]
+N1_range_post = Number[]
+γ0 = Number[]
+ω = 1
+for γ0i = 10 .^ (range(-2,log10(3),length=50))
+	push!(γ0, γ0i)
+	γdot_fun(t) = γ0i*τm*ω*cos(τm*ω*t)
+	gradv = [v11,v12,v13,γdot_fun,v22,v23,v31,v32,v33]
+	res_pre = solve_ude_mm(gradv, tspan, θ0, p_system, n_modes, saveat)
+	res_post = solve_ude_mm(gradv, tspan, θi, p_system, n_modes, saveat)
 
-# 	# Compute FFTs
-# 	t_pre = τm*res_pre[1]
-# 	γ12 = γ0i*sin.(ω*t_pre) 
-# 	sol_pre = Gm*res_pre[2]
-# 	σ12_ude_pre = sol_pre[4,:]
-# 	σ12_pre_fft = rfft(σ12_ude_pre)
-# 	γ12_fft = rfft(γ12)
-# 	ω_fft = 2*π*rfftfreq(length(σ12_ude_pre), (length(t_pre)-1)/(t_pre[end]-t_pre[1]))
-# 	I_min = argmin(abs.(ω_fft .- 1))
+	# Compute FFTs
+	t_pre = τm*res_pre[1]
+	γ12 = γ0i*sin.(ω*t_pre) 
+	sol_pre = Gm*res_pre[2]
+	σ12_ude_pre = sol_pre[4,:]
+	σ12_pre_fft = rfft(σ12_ude_pre)
+	γ12_fft = rfft(γ12)
+	ω_fft = 2*π*rfftfreq(length(σ12_ude_pre), (length(t_pre)-1)/(t_pre[end]-t_pre[1]))
+	I_min = argmin(abs.(ω_fft .- 1))
 
-# 	sol_post = Gm*res_post[2]
-# 	σ12_ude_post = sol_post[4,:]
-# 	σ12_post_fft = rfft(σ12_ude_post)
+	sol_post = Gm*res_post[2]
+	σ12_ude_post = sol_post[4,:]
+	σ12_post_fft = rfft(σ12_ude_post)
 
-# 	N1_ude_pre = sol_pre[1,:] - sol_pre[2,:]
-# 	N1_pre_fft = rfft(N1_ude_pre)
-# 	N1_ude_post = sol_post[1,:] - sol_post[2,:]
-# 	N1_post_fft = rfft(N1_ude_post)
-# 	I_min_2 = argmin(abs.(ω_fft .- 2))
-# 	N1_2_pre = N1_pre_fft[I_min_2]/γ12_fft[I_min]
-# 	N1_2_post = N1_post_fft[I_min_2]/γ12_fft[I_min]
+	N1_ude_pre = sol_pre[1,:] - sol_pre[2,:]
+	N1_pre_fft = rfft(N1_ude_pre)
+	N1_ude_post = sol_post[1,:] - sol_post[2,:]
+	N1_post_fft = rfft(N1_ude_post)
+	I_min_2 = argmin(abs.(ω_fft .- 2))
+	N1_2_pre = N1_pre_fft[I_min_2]/γ12_fft[I_min]
+	N1_2_post = N1_post_fft[I_min_2]/γ12_fft[I_min]
 
-# 	# Compute moduli
-# 	G1_pre = σ12_pre_fft[I_min]/γ12_fft[I_min]
-# 	G1_post = σ12_post_fft[I_min]/γ12_fft[I_min]
-# 	push!(Gp_pre, real(G1_pre))
-# 	push!(Gpp_pre, imag(G1_pre))
-# 	push!(N1_pre, sum(sol_pre[1,:] - sol_pre[2,:])/length(sol_pre[1,:]))
-# 	push!(N1_range_pre, maximum(sol_pre[1,:] - sol_pre[2,:]) - minimum(sol_pre[1,:] - sol_pre[2,:]))
-# 	push!(Gp_post, real(G1_post))
-# 	push!(Gpp_post, imag(G1_post))
-# 	push!(N1_post, sum(sol_post[1,:] - sol_post[2,:])/length(sol_post[1,:]))
-# 	push!(N1_range_post, maximum(sol_post[1,:] - sol_post[2,:]) - minimum(sol_post[1,:] - sol_post[2,:]))
-# 	push!(N1_phase_pre, angle(N1_2_pre))
-# 	push!(N1_phase_post, angle(N1_2_post))
-# end
+	# Compute moduli
+	G1_pre = σ12_pre_fft[I_min]/γ12_fft[I_min]
+	G1_post = σ12_post_fft[I_min]/γ12_fft[I_min]
+	push!(Gp_pre, real(G1_pre))
+	push!(Gpp_pre, imag(G1_pre))
+	push!(N1_pre, sum(sol_pre[1,:] - sol_pre[2,:])/length(sol_pre[1,:]))
+	push!(N1_range_pre, maximum(sol_pre[1,:] - sol_pre[2,:]) - minimum(sol_pre[1,:] - sol_pre[2,:]))
+	push!(Gp_post, real(G1_post))
+	push!(Gpp_post, imag(G1_post))
+	push!(N1_post, sum(sol_post[1,:] - sol_post[2,:])/length(sol_post[1,:]))
+	push!(N1_range_post, maximum(sol_post[1,:] - sol_post[2,:]) - minimum(sol_post[1,:] - sol_post[2,:]))
+	push!(N1_phase_pre, angle(N1_2_pre))
+	push!(N1_phase_post, angle(N1_2_post))
+end
 
-# fig, ax = subplots(2,1)
-# ax[1].loglog(γ0[1:10], Gp_pre[1:10], "r--")
-# ax[1].loglog(γ0[1:10], Gpp_pre[1:10], "b--")
-# ax[1].loglog(γ0, Gp_post, "r-")
-# ax[1].loglog(γ0, Gpp_post, "b-")
-# ax[1].loglog(γ0_data[1:3], Gp_data[1:3], "ro", fillstyle="none")
-# ax[1].loglog(γ0_data[1:3], Gpp_data[1:3], "bo", fillstyle="none")
-# ax[1].loglog(γ0_data[4:end], Gp_data[4:end], "ro")
-# ax[1].loglog(γ0_data[4:end], Gpp_data[4:end], "bo")
-# ax[1][:tick_params](axis="both", direction="in", which="both", right="true", top="true", labelsize=12)
-# ax[1].set_xticklabels([])
+fig, ax = subplots(2,1)
+ax[1].loglog(γ0[1:10], Gp_pre[1:10], "r--")
+ax[1].loglog(γ0[1:10], Gpp_pre[1:10], "b--")
+ax[1].loglog(γ0, Gp_post, "r-")
+ax[1].loglog(γ0, Gpp_post, "b-")
+ax[1].loglog(γ0_data[1:3], Gp_data[1:3], "ro", fillstyle="none")
+ax[1].loglog(γ0_data[1:3], Gpp_data[1:3], "bo", fillstyle="none")
+ax[1].loglog(γ0_data[4:end], Gp_data[4:end], "ro")
+ax[1].loglog(γ0_data[4:end], Gpp_data[4:end], "bo")
+ax[1][:tick_params](axis="both", direction="in", which="both", right="true", top="true", labelsize=12)
+ax[1].set_xticklabels([])
 
-# #fig, ax = subplots()
-# ax[2].loglog(γ0[1:10], N1_pre[1:10]./γ0[1:10].^2, ls="--", c="purple")
-# ax[2].loglog(γ0, N1_post./γ0.^2, ls="-", c="purple")
-# ax[2].loglog(γ0_data, N1_zero_data./γ0_data.^2, ls="", marker="o", c="purple")
-# ax[2][:tick_params](axis="both", direction="in", which="both", right="true", top="true", labelsize=12)
-# subplots_adjust(wspace=0, hspace=0)
+#fig, ax = subplots()
+ax[2].loglog(γ0[1:10], N1_pre[1:10]./γ0[1:10].^2, ls="--", c="purple")
+ax[2].loglog(γ0, N1_post./γ0.^2, ls="-", c="purple")
+ax[2].loglog(γ0_data, N1_zero_data./γ0_data.^2, ls="", marker="o", c="purple")
+ax[2][:tick_params](axis="both", direction="in", which="both", right="true", top="true", labelsize=12)
+subplots_adjust(wspace=0, hspace=0)
+
+fig.tight_layout(pad=1.0)  # Adjust spacing between subplots
+savefig("gel_test.pdf", bbox_inches="tight")  # Save with tight bounding box
 
