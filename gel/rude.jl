@@ -344,7 +344,7 @@ for k = range(start_at,length(protocols),step=1)
   # println("Optimization function defined")
 	optprob = Optimization.OptimizationProblem(optf, θi)
   # println("Optimization problem defined")
-	@time result_univ = Optimization.solve(optprob, Optimisers.AMSGrad(), callback = cb_fun, maxiters = 1)
+	@time result_univ = Optimization.solve(optprob, Optimisers.AMSGrad(), callback = cb_fun, maxiters = 200)
   # println("Optimization problem solved")
 	global θi = result_univ.u
   # println("Weights updated")
