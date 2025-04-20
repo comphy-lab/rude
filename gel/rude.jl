@@ -1,5 +1,6 @@
 using Flux, Optimization, OptimizationOptimisers, SciMLSensitivity, DifferentialEquations
 using Zygote, PyPlot, LinearAlgebra, OrdinaryDiffEq, DelimitedFiles
+using ForwardDiff
 using DataInterpolations
 using BSON: @save, @load
 using FFTW
@@ -89,10 +90,11 @@ function tbnn(σ,γd,model_weights_1,model_weights_2)
     λ9 = (T6_11 + T6_22 + T6_33)/2
 
     # Run the integrity basis through a neural network
-    model_inputs = [λ1;λ2;λ3;λ4;λ5;λ6;λ7;λ8;λ9]
+    raw_inputs = [λ1;λ2;λ3;λ4;λ5;λ6;λ7;λ8;λ9]
+    model_inputs = eltype(raw_inputs) <: AbstractFloat ? Float32.(raw_inputs) : raw_inputs
     g1,g2,g3 = re_1(model_weights_1)(model_inputs)
     g4,g5,g6,g7,g8,g9 = re_2(model_weights_2)(model_inputs)
-    
+
     # Tensor combining layer
     F11 = g1 + g2*σ11 + g3*γd11 + g4*T4_11 + g5*T5_11 + g6*T6_11 + g7*T7_11 + g8*T8_11 + g9*T9_11
     F22 = g1 + g2*σ22 + g3*γd22 + g4*T4_22 + g5*T5_22 + g6*T6_22 + g7*T7_22 + g8*T8_22 + g9*T9_22
@@ -120,7 +122,7 @@ function dudt_univ!(du, u, p, t, gradv)
     # Compute the rate-of-strain (symmetric) and vorticity (antisymmetric) tensors
     γd11 = 2*v11(t)
     γd22 = 2*v22(t)
-    γd33 = 2*v33(t) 
+    γd33 = 2*v33(t)
     γd12 = v12(t) + v21(t)
     γd13 = v13(t) + v31(t)
     γd23 = v23(t) + v32(t)
@@ -162,38 +164,48 @@ function ensemble_solve(θ,η0s,τs,ensemble,protocols,tspans,σ0,saveat)
 	end
 
 	ensemble_prob = EnsembleProblem(prob, prob_func=prob_func)
-	sim = solve(ensemble_prob, Tsit5(), ensemble, trajectories=n_protocols*n_modes, 
+	sim = solve(ensemble_prob, Tsit5(), ensemble, trajectories=n_protocols*n_modes,
 		    sensealg = InterpolatingAdjoint(autojacvec=ReverseDiffVJP(true)), saveat=saveat, dtmin=1E-4)
+
+  # Extract the necessary components in a format Zygote can differentiate through
+  # This avoids the type conversion problem
+  solution_array = Array(sim)
+  return solution_array
 end
 
 function loss_univ(θ,p_system,n_modes,protocols,tspans,σ0,σ12_all,saveat)
-	# Compute the multimode solution
-	loss = 0
-	trajectories = length(protocols)
-	η0s = p_system[1:n_modes]
-	τs = p_system[n_modes+1:end]
-	results = ensemble_solve(θ, η0s, τs, EnsembleThreads(), protocols, tspans, σ0, saveat)
-	
-	# Iterate over all flow protocols
-	for k = range(1,trajectories,step=1)
-		σ12_pred = Zygote.Buffer(σ12_all[k], length(σ12_all[k]))
-		σ12_pred[:] = zeros(length(σ12_all[k]))
+  # Compute the multimode solution
+  loss = 0
+  trajectories = length(protocols)
+  η0s = p_system[1:n_modes]
+  τs = p_system[n_modes+1:end]
 
-		# Iterate over all modes
-		for n = range(1,n_modes,step=1)
-			if size(results[(k-1)*n_modes + n][4,2:end]) == size(σ12_all[k])
-				σ12_pred[:] += results[(k-1)*n_modes + n][4,2:end]
-			else
-				loss += Inf
-			end
-		end
+  # Iterate over all flow protocols
+  for k = range(1,trajectories,step=1)
+      σ12_pred = Zygote.Buffer(σ12_all[k], length(σ12_all[k]))
+      σ12_pred[:] = zeros(length(σ12_all[k]))
 
-		# Add to loss
-		σ12_pred = copy(σ12_pred)
-		loss += sum(abs2, σ12_all[k] - σ12_pred)/sum(abs2, σ12_all[k])
-	end
+      # Iterate over all modes
+      for n = range(1,n_modes,step=1)
+          # Solve each problem individually instead of using ensemble
+          dudt!(du,u,p,t) = dudt_univ!(du,u,p,t,protocols[k])
+          prob = ODEProblem(dudt!, σ0, tspans[k], [θ; η0s[n]; τs[n]])
+          sol = solve(prob, Tsit5(), saveat=saveat,
+                    sensealg = InterpolatingAdjoint(autojacvec=ReverseDiffVJP(true)))
 
-	return loss
+          if size(sol[4,2:end]) == size(σ12_all[k])
+              σ12_pred[:] += sol[4,2:end]
+          else
+              loss += Inf
+          end
+      end
+
+      # Add to loss
+      σ12_pred = copy(σ12_pred)
+      loss += sum(abs2, σ12_all[k] - σ12_pred)/sum(abs2, σ12_all[k])
+  end
+
+  return loss
 end
 
 function solve_ude_mm(protocol, tspan, θ, p, n_modes, saveat)
@@ -255,7 +267,9 @@ for l = range(1,num_freqs,step=1)
 		# Build strain rate function
 		γdot_fd = ((data[2:end,5]) .- (data[1:end-1,5]))./(data[2:end,4]/τm .- data[1:end-1,4]/τm)
 		t_mid = (data[2:end,4] + data[1:end-1,4])/(2*τm)
-		interp = LinearInterpolation(γdot_fd,t_mid)
+		# interp = LinearInterpolation(γdot_fd,t_mid)
+		# if there is need to extrapolate, use linear extrapolation.
+		interp = LinearInterpolation(γdot_fd, t_mid, extrapolation_left=ExtrapolationType.Linear)
 		γdot_fun(t) = interp(t)
 		gradv = [v11,v12,v13,γdot_fun,v22,v23,v31,v32,v33]
 		protocols[sum(num_amps[1:l-1]) + k] = gradv
@@ -312,7 +326,7 @@ callback = function (θ, l, protocols, tspans, σ0, σ12_all)
   # Uncomment the following two lines to save the model weights at each interation
   #filename = "weights/weights_" * string(iter) * ".bson"
   #@save filename θ
-  
+
   println(l)
   println(iter)
   return false
@@ -321,21 +335,32 @@ end
 # Continuation training loop
 adtype = Optimization.AutoZygote()
 for k = range(start_at,length(protocols),step=1)
+  println("Training protocol $k")
 	loss_fn(θ) = loss_univ(θ, p_system, n_modes, protocols[1:k], tspans[1:k], σ0, σ12_all, saveat)
+  # println("Loss function defined")
 	cb_fun(θ, l) = callback(θ, l, protocols[1:k], tspans[1:k], σ0, σ12_all)
+  # println("Callback function defined")
 	optf = Optimization.OptimizationFunction((x,p) -> loss_fn(x), adtype)
+  # println("Optimization function defined")
 	optprob = Optimization.OptimizationProblem(optf, θi)
+  # println("Optimization problem defined")
 	@time result_univ = Optimization.solve(optprob, Optimisers.AMSGrad(), callback = cb_fun, maxiters = 200)
-
+  # println("Optimization problem solved")
 	global θi = result_univ.u
-	
+  # println("Weights updated")
+
 	# Save the weights
-	@save "tbnn.bson" θi	
+	@save "tbnn.bson" θi
+  println("Weights saved\n")
 end
 
 # Uncomment to plot the training curve
-fig, ax = subplots()
-ax.semilogy(losses)
+# Use global variables for the main plot since it's at the top level
+if length(losses) > 0
+    global fig, ax = PyPlot.subplots()
+    ax.semilogy(losses)
+    PyPlot.savefig("training_curve.pdf")
+end
 
 # Test the UDE on a new condition
 target = ["σ12","σ12","σ12","σ12"]
@@ -391,12 +416,12 @@ for k = range(1,length(protocols),step=1)
 
 	# Plot
 	if target[k] == "σ12"
-		fig, ax = subplots()
+		local fig, ax = subplots()
 		ax.plot(γ12_data,σ12_ude_pre[2:end],"b--",lw=2)
 		ax.plot(γ12_data,σ12_ude_post[2:end],"r-",lw=2)
 		ax.plot(γ12_data[1:20:end],σ12_data[1:20:end],"ko")
 	elseif target[k] == "N1"
-		fig, ax = subplots()
+		local fig, ax = subplots()
 		ax.plot(γ12_data,N1_ude_pre[2:end],"b--",lw=2)
 		ax.plot(γ12_data,N1_ude_post[2:end],"r-",lw=2)
 		N1_data_new = copy(N1_data)
@@ -410,11 +435,11 @@ for k = range(1,length(protocols),step=1)
 		end
 		ax.plot(γ12_data[1:5:end],N1_data_new[1:5:end],"ko")
 	elseif target[k] == "N2"
-		fig, ax = subplots()
+		local fig, ax = subplots()
 		ax.plot(t_pre,N2_ude_pre,"b--",lw=2)
 		ax.plot(t_post,N2_ude_post,"r-",lw=2)
 	elseif target[k] == "ηE"
-		fig, ax = subplots()
+		local fig, ax = subplots()
 		ax.plot(t_pre,-N2_ude_pre-N1_ude_pre,"b--",lw=2)
 		ax.plot(t_post,-N2_ude_post-N1_ude_post,"r-",lw=2)
 	end
@@ -496,4 +521,7 @@ ax[2].loglog(γ0, N1_post./γ0.^2, ls="-", c="purple")
 ax[2].loglog(γ0_data, N1_zero_data./γ0_data.^2, ls="", marker="o", c="purple")
 ax[2][:tick_params](axis="both", direction="in", which="both", right="true", top="true", labelsize=12)
 subplots_adjust(wspace=0, hspace=0)
+
+fig.tight_layout(pad=1.0)  # Adjust spacing between subplots
+savefig("gel_test.pdf", bbox_inches="tight")  # Save with tight bounding box
 

@@ -32,6 +32,45 @@ The scripts used to process experimental linear response data and to plot OpenFO
 - `weights_402.bson`: partially pre-trained model, terminated after an epoch of 200 training iterations on the two lowest-amplitude LAOS experiments, with training initialized using the `weights_201.bson` network
 - `weights_603.bson`: fully pre-trained model, terminated after an epoch of 200 training iterations on all three training LAOS curves, with training initialized using the `weights_402.bson` network
 
+---
+
+## Dependency Installation (`install_dependencies.sh`)
+
+This repository provides a unified script, `install_dependencies.sh`, to set up all Python and Julia dependencies required for the project.
+
+### How it works
+
+- **Python dependencies**:  
+  The script parses the `requirements.txt` file for Python dependencies (listed before the `# Julia dependencies` line) and installs them into a dedicated environment:
+  - If `conda` is available, it creates a fresh `py-rude` conda environment and installs the dependencies with `pip`.
+  - If `conda` is not found, it creates a Python virtual environment named `py-rude` and installs the dependencies with `pip3`.
+
+- **Julia dependencies**:  
+  The script parses the `requirements.txt` file for Julia dependencies (listed after the `# Julia dependencies` line) and generates a Julia script to install them using Julia's package manager.  
+  - The install script ensures that the latest version of each Julia dependency is installed, unless a version is pinned in `requirements.txt`.
+  - The Julia environment is activated in a dedicated directory, and `Pkg.resolve()` and `Pkg.status()` are called for reproducibility.
+
+### Best Practices
+
+- **Version Management**:  
+  By default, the script installs the most recent versions of all dependencies. If you need to pin a specific version, specify it in `requirements.txt` using the Julia keyword argument syntax (e.g., `Pkg.add(name="PackageName", version="1.2.3")`).
+- **Reproducibility**:  
+  Run this script regularly to ensure your environment is always up to date and compatible with the latest code.
+- **Updating Dependencies**:  
+  To update or add dependencies, modify `requirements.txt` and rerun `install_dependencies.sh`.
+
+---
+
+## Usage Instructions
+
+After pulling these changes:
+
+1. Run `bash install_dependencies.sh` to set up all required dependencies.
+2. Activate the environment with `source .project_config`.
+3. Run RUDE with the standard workflow.
+
+---
+
 ## Contibuting
 
 Inquiries and suggestions can be directed to krlennon[at]mit.edu.

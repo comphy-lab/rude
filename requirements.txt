@@ -1,0 +1,20 @@
+# Python dependencies 
+numpy
+matplotlib
+scipy
+pandas
+
+# Julia dependencies
+Flux
+Optimization
+Optimisers
+OptimizationOptimisers
+SciMLSensitivity
+DifferentialEquations
+Zygote
+Enzyme
+PyPlot
+OrdinaryDiffEq
+DataInterpolations
+BSON
+FFTW
